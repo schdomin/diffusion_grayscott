@@ -7,10 +7,10 @@
 int main( int argc, char** argv )
 {
     //ds check simple input arguments - CAUTION: the implementation expects real numbers, the simulation will be corrupted if invalid values are entered
-    if( 4 != argc )
+    if( 3 != argc )
     {
         //ds inform
-        std::cout << "usage: diffusion_pse [Number of grid points 1D] [Number of time steps] [Performance mode: 1(yes)/0(no)]" << std::endl;
+        std::cout << "usage: diffusion_pse [Number of grid points 1D] [Final time]" << std::endl;
         return 0;
     }
 
@@ -25,7 +25,7 @@ int main( int argc, char** argv )
     const unsigned int uNumberOfGridPoints1D( atoi( argv[1] ) );
     const unsigned int uNumberOfParticles( uNumberOfGridPoints1D*uNumberOfGridPoints1D );
     const double dGridPointSpacing( dBoundarySize/( uNumberOfGridPoints1D - 1 ) );
-    const unsigned int uNumberOfTimeSteps( atoi( argv[2] ) );
+    const double dFinalTime( atoi( argv[2] ) );
     double dTimeStepSize( 1.0 );
 
     //ds determine timestep size
@@ -38,6 +38,9 @@ int main( int argc, char** argv )
         dTimeStepSize = 0.5*dGridPointSpacing*dGridPointSpacing/dDiffusionCoefficientV;
     }
 
+    //ds compute number of steps
+    const unsigned int uNumberOfTimeSteps( ceil( dFinalTime/dTimeStepSize ) );
+
     const double dReactionRateF( 0.03 );
     const double dReactionRateK( 0.062 );
 
@@ -49,6 +52,7 @@ int main( int argc, char** argv )
     std::cout << "Number of Grid Points 1D: "  << uNumberOfGridPoints1D << std::endl;
     std::cout << "     Number of Particles: "  << uNumberOfParticles << std::endl;
     std::cout << "      Grid Point Spacing: "  << dGridPointSpacing << std::endl;
+    std::cout << "              Final Time: "  << dFinalTime << std::endl;
     std::cout << "    Number of Time Steps: "  << uNumberOfTimeSteps << std::endl;
     std::cout << "          Time Step Size: "  << dTimeStepSize << std::endl;
     std::cout << "         Reaction rate F: "  << dReactionRateF << std::endl;
@@ -61,67 +65,37 @@ int main( int argc, char** argv )
     //ds information
     std::cout << "               Status:  0% done - current time: 0";
 
-    //ds get the mode mode
-    const unsigned int uMode( atoi( argv[3] ) );
-
-    //ds check for performance run (no streaming)
-    if( 1 == uMode )
+    //ds start simulation
+    for( unsigned int uCurrentTimeStep = 1; uCurrentTimeStep < uNumberOfTimeSteps+1; ++uCurrentTimeStep )
     {
-        //ds start simulation
-        for( unsigned int uCurrentTimeStep = 1; uCurrentTimeStep < uNumberOfTimeSteps+1; ++uCurrentTimeStep )
-        {
-            //ds calculate percentage done
-            const double dPercentageDone( 100.0*uCurrentTimeStep/uNumberOfTimeSteps );
+        //ds calculate percentage done
+        const double dPercentageDone( 100.0*uCurrentTimeStep/uNumberOfTimeSteps );
 
-            //ds and time
-            const double dCurrentTime( uCurrentTimeStep*dTimeStepSize );
+        //ds and time
+        const double dCurrentTime( uCurrentTimeStep*dTimeStepSize );
 
-            //ds get a formatted string -> 100% -> 3 digits
-            char chBuffer[4];
+        //ds get a formatted string -> 100% -> 3 digits
+        char chBuffer[4];
 
-            //ds fill the buffer
-            std::snprintf( chBuffer, 4, "%3.0f", dPercentageDone );
+        //ds fill the buffer
+        std::snprintf( chBuffer, 4, "%3.0f", dPercentageDone );
 
-            //ds print info
-            std::cout << '\xd';
-            std::cout << "               Status: " << chBuffer << "% done - current time: " << dCurrentTime;
+        //ds print info
+        std::cout << '\xd';
+        std::cout << "               Status: " << chBuffer << "% done - current time: " << dCurrentTime;
 
-            //ds update domain
-            //cDomain.updateHeatDistributionNumerical( );
-        }
+        //ds update domain
+        cDomain.updateHeatDistributionNumerical( dReactionRateF, dReactionRateK );
+
+        //ds streaming
+        cDomain.saveHeatGridToStream( );
     }
-    else
-    {
-        //ds start simulation
-        for( unsigned int uCurrentTimeStep = 1; uCurrentTimeStep < uNumberOfTimeSteps+1; ++uCurrentTimeStep )
-        {
-            //ds calculate percentage done
-            const double dPercentageDone( 100.0*uCurrentTimeStep/uNumberOfTimeSteps );
 
-            //ds and time
-            const double dCurrentTime( uCurrentTimeStep*dTimeStepSize );
+    //ds save final mesh to png
+    cDomain.saveMeshToPNG( dFinalTime );
 
-            //ds get a formatted string -> 100% -> 3 digits
-            char chBuffer[4];
-
-            //ds fill the buffer
-            std::snprintf( chBuffer, 4, "%3.0f", dPercentageDone );
-
-            //ds print info
-            std::cout << '\xd';
-            std::cout << "               Status: " << chBuffer << "% done - current time: " << dCurrentTime;
-
-            //ds update domain
-            cDomain.updateHeatDistributionNumerical( dReactionRateF, dReactionRateK );
-
-            //ds streaming
-            //cDomain.saveHeatGridToStream( );
-            cDomain.saveMeshToPNG( uCurrentTimeStep, 10 );
-        }
-
-        //ds save the streams to a file
-        //cDomain.writeHeatGridToFile( "bin/simulation.txt", uNumberOfTimeSteps );
-    }
+    //ds save the streams to a file
+    cDomain.writeHeatGridToFile( "bin/simulation.txt", uNumberOfTimeSteps );
 
     //ds stop timing
     const double dDurationSeconds( tmTimer.stop( ) );

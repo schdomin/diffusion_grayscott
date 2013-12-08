@@ -42,7 +42,7 @@ disp( [ 'finished data import - time: ', num2str( toc ) ] );
 
 %ds prepare video writer
 writerObj = VideoWriter('simulation.avi');
-writerObj.FrameRate = 25;
+writerObj.FrameRate = 5;
 open( writerObj );
 disp( [ 'timestep: ', num2str( 1 ) ] );
 
@@ -68,10 +68,10 @@ set( gcf, 'Renderer' ,'zbuffer' );
 %set( gcf, 'LineStyle', 'none' );
 
 % %ds for each remaining timestep
-for uCurrentTimestep = 2:1:uNumberOfTimesteps
+for uCurrentTimestep = 2:1:30
     
     %ds only save every 20th frame instead 500 -> 25 frames per sec
-    if mod( uCurrentTimestep, 10 ) == 0
+    %if mod( uCurrentTimestep, 10 ) == 0
         
         %ds create a figure
         contourf( squeeze( matHeatGrid( uCurrentTimestep, :, : ) ), 100, 'LineColor', 'none'  );
@@ -81,7 +81,7 @@ for uCurrentTimestep = 2:1:uNumberOfTimesteps
 
         disp( [ 'timestep: ', num2str( uCurrentTimestep ) ] );
 
-    end
+    %end
 end
 
 %ds write video file

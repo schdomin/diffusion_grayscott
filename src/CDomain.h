@@ -54,15 +54,12 @@ private:
     std::string m_strLogHeatDistribution;
     std::string m_strLogNorms;
 
-    //ds PNG
-    unsigned int m_uNumberOfImagesSaved;
-
 //ds accessors
 public:
 
     void updateHeatDistributionNumerical( const double& p_dReactionRateF, const double& p_dReactionRateK );
     void saveHeatGridToStream( );
-    void saveMeshToPNG( const unsigned int& p_uCurrentTimeStep, const unsigned int& p_uRate );
+    void saveMeshToPNG( const double& p_dCurrentTime );
     void writeHeatGridToFile( const std::string& p_strFilename, const unsigned int& p_uNumberOfTimeSteps ) const;
 
 //ds helpers

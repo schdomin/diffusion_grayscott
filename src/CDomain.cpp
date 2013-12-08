@@ -30,11 +30,10 @@ CDomain::CDomain( const double& p_dDiffusionCoefficientU,
                                                     m_dTimeStepSize( p_dTimeStepSize ),
                                                     m_dEpsilon( 2*p_dGridPointSpacing ),
                                                     m_dVolP( p_dGridPointSpacing*p_dGridPointSpacing ),
-                                                    m_PSEFactorU( p_dTimeStepSize*p_dDiffusionCoefficientU/( m_dEpsilon*m_dEpsilon )*m_dVolP ),
-                                                    m_PSEFactorV( p_dTimeStepSize*p_dDiffusionCoefficientV/( m_dEpsilon*m_dEpsilon )*m_dVolP ),
+                                                    m_PSEFactorU( p_dDiffusionCoefficientU/( m_dEpsilon*m_dEpsilon )*m_dVolP ),
+                                                    m_PSEFactorV( p_dDiffusionCoefficientV/( m_dEpsilon*m_dEpsilon )*m_dVolP ),
                                                     m_strLogHeatDistribution( "" ),
-                                                    m_strLogNorms( "" ),
-                                                    m_uNumberOfImagesSaved( 1 )
+                                                    m_strLogNorms( "" )
 
 {
     //ds allocate memory for the data structures
@@ -113,19 +112,19 @@ void CDomain::updateHeatDistributionNumerical( const double& p_dReactionRateF, c
                         //ds get kernel value
                         const double dEta( getKernelEta( dXp, dXk ) );
 
-                        //ds heat product
-                        const double dHeatProduct( m_gridHeatU[uk][vk]*m_gridHeatV[uk][vk]*m_gridHeatV[uk][vk] );
-
                         //ds compute inner sum
-                        dInnerSumU += ( m_gridHeatU[up][vp] - m_gridHeatU[uk][vk] )*dEta - dHeatProduct + p_dReactionRateF*( 1.0 - m_gridHeatU[uk][vk] );
-                        dInnerSumV += ( m_gridHeatV[up][vp] - m_gridHeatV[uk][vk] )*dEta + dHeatProduct - ( p_dReactionRateF + p_dReactionRateK )*m_gridHeatV[uk][vk];
+                        dInnerSumU += ( m_gridHeatU[up][vp] - m_gridHeatU[uk][vk] )*dEta;
+                        dInnerSumV += ( m_gridHeatV[up][vp] - m_gridHeatV[uk][vk] )*dEta;
                     }
                 }
             }
 
+            //ds heat product
+            const double dHeatProduct( m_gridHeatU[uk][vk]*m_gridHeatV[uk][vk]*m_gridHeatV[uk][vk] );
+
             //ds add final part of formula and save in temporary grid
-            gridHeatUChangePSE[uk][vk] = m_PSEFactorU*dInnerSumU;
-            gridHeatVChangePSE[uk][vk] = m_PSEFactorV*dInnerSumV;
+            gridHeatUChangePSE[uk][vk] = m_PSEFactorU*dInnerSumU - dHeatProduct + p_dReactionRateF*( 1.0 - m_gridHeatU[uk][vk] );
+            gridHeatVChangePSE[uk][vk] = m_PSEFactorV*dInnerSumV + dHeatProduct - ( p_dReactionRateF + p_dReactionRateK )*m_gridHeatV[uk][vk];
         }
     }
 
@@ -134,8 +133,8 @@ void CDomain::updateHeatDistributionNumerical( const double& p_dReactionRateF, c
     {
         for( unsigned int v = 0; v < m_uNumberOfGridPoints1D; ++v )
         {
-            m_gridHeatU[u][v] += gridHeatUChangePSE[u][v];
-            m_gridHeatV[u][v] += gridHeatVChangePSE[u][v];
+            m_gridHeatU[u][v] += m_dTimeStepSize*gridHeatUChangePSE[u][v];
+            m_gridHeatV[u][v] += m_dTimeStepSize*gridHeatVChangePSE[u][v];
         }
     }
 }
@@ -163,32 +162,25 @@ void CDomain::saveHeatGridToStream( )
     }
 }
 
-void CDomain::saveMeshToPNG( const unsigned int& p_dCurrentTimeStep, const unsigned int& p_uRate )
+void CDomain::saveMeshToPNG( const double& p_dCurrentTime )
 {
-    //ds if the current step matches the rate
-    if( 0 == p_dCurrentTimeStep%p_uRate )
-    {
-        //ds get mesh size
-        const unsigned int uMeshSize( 2*m_uNumberOfGridPoints1D );
+    //ds get mesh size
+    const unsigned int uMeshSize( 2*m_uNumberOfGridPoints1D );
 
-        //ds get the data
-        unsigned char* chMesh( getP2M( uMeshSize ) );
+    //ds get the data
+    unsigned char* chMesh( getP2M( uMeshSize ) );
 
-        //ds construct picture name - buffer for snprintf
-        char chBuffer[64];
+    //ds construct picture name - buffer for snprintf
+    char chBuffer[64];
 
-        //ds format: image_number.png
-        std::snprintf( chBuffer, 64, "bin/image_%.4u.png", m_uNumberOfImagesSaved );
+    //ds format: image_number.png
+    std::snprintf( chBuffer, 64, "bin/image_%06.0f.png", p_dCurrentTime );
 
-        //ds create png
-        writePNG( chBuffer, uMeshSize, uMeshSize, chMesh );
+    //ds create png
+    writePNG( chBuffer, uMeshSize, uMeshSize, chMesh );
 
-        //ds free data
-        delete chMesh;
-
-        //ds increase counter
-        ++m_uNumberOfImagesSaved;
-    }
+    //ds free data
+    delete chMesh;
 }
 
 void CDomain::writeHeatGridToFile( const std::string& p_strFilename, const unsigned int& p_uNumberOfTimeSteps ) const
@@ -292,7 +284,7 @@ unsigned char* CDomain::getP2M( const unsigned int& p_uMeshSize ) const
             //ds index in mesh
             unsigned int uIndexMesh = 4.0*( i*p_uMeshSize + j );
 
-            //ds concentration on mesh
+            //ds concentrations on mesh
             double dConcentrationU( 0.0 );
             double dConcentrationV( 0.0 );
 
@@ -302,22 +294,26 @@ unsigned char* CDomain::getP2M( const unsigned int& p_uMeshSize ) const
                 for( unsigned int v = 0; v < m_uNumberOfGridPoints1D; ++v )
                 {
                     //ds get lambdas
-                    const double dLambdai = u*m_dGridPointSpacing/dH - i;
-                    const double dLambdaj = v*m_dGridPointSpacing/dH - j;
+                    const double dLambdai = _onGrid( u )/dH - i;
+                    const double dLambdaj = _onGrid( v )/dH - j;
+
+                    //ds get kernel
+                    const double dW( getKernelW( dLambdai )*getKernelW( dLambdaj ) );
 
                     //ds compute concentration
-                    dConcentrationU += m_gridHeatU[u][v]*getKernelW( dLambdai )*getKernelW( dLambdaj );
-                    dConcentrationV += m_gridHeatV[u][v]*getKernelW( dLambdai )*getKernelW( dLambdaj );
+                    dConcentrationU += m_gridHeatU[u][v]*dW;
+                    dConcentrationV += m_gridHeatV[u][v]*dW;
                 }
             }
 
-            const double dR( dConcentrationU-dConcentrationV );
+            //ds compute difference
+            const double dDifference( dConcentrationU-dConcentrationV );
 
             //ds set the mesh values - SNIPPET
-            chMesh[uIndexMesh+0] = clamp( gamma( dR ), 0.0, 1.0 )*0xFFu; // red
-            chMesh[uIndexMesh+1] = clamp( 1.0, 0.0, 1.0 )*0xFFu;                      // green
-            chMesh[uIndexMesh+2] = clamp( gamma( -dR ), 0.0, 1.0 )*0xFFu; // blue
-            chMesh[uIndexMesh+3] = 0xFFu;                                             // alpha (opacity, 0xFFu = 255)
+            chMesh[uIndexMesh+0] = clamp( dDifference, 0.0, 1.0 )*0xFFu;  // red
+            chMesh[uIndexMesh+1] = clamp( 1.0, 0.0, 1.0 )*0xFFu;          // green
+            chMesh[uIndexMesh+2] = clamp( -dDifference, 0.0, 1.0 )*0xFFu; // blue
+            chMesh[uIndexMesh+3] = 0xFFu;                                 // alpha (opacity, 0xFFu = 255)
         }
     }
 
