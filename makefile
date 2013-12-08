@@ -10,7 +10,7 @@ LIBS = -lpng
 #ds default field
 all: main
 
-	$(CC) bin/writepng.o bin/CDomain.o bin/main.o -o bin/diffusion_pse $(LIBS)
+	$(CC) bin/writepng.o bin/CDomain.o bin/main.o -o bin/diffusion_grayscott $(LIBS)
 
 #ds object files
 main:

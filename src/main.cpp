@@ -18,28 +18,45 @@ int main( int argc, char** argv )
     Timer tmTimer; tmTimer.start( );
 
     //ds get parameters
-    const double dDiffusionCoefficient( 1.0 );
-    const std::pair< double, double > prBoundaries( 0.0, 1.0 );
+    const double dDiffusionCoefficientU( 0.00002 );
+    const double dDiffusionCoefficientV( 0.00001 );
+    const std::pair< double, double > prBoundaries( -1.0, 1.0 );
     const double dBoundarySize = fabs( prBoundaries.second - prBoundaries.first );
     const unsigned int uNumberOfGridPoints1D( atoi( argv[1] ) );
     const unsigned int uNumberOfParticles( uNumberOfGridPoints1D*uNumberOfGridPoints1D );
     const double dGridPointSpacing( dBoundarySize/( uNumberOfGridPoints1D - 1 ) );
     const unsigned int uNumberOfTimeSteps( atoi( argv[2] ) );
-    const double dTimeStepSize( 0.5*dGridPointSpacing*dGridPointSpacing/dDiffusionCoefficient );
+    double dTimeStepSize( 1.0 );
+
+    //ds determine timestep size
+    if( dDiffusionCoefficientU > dDiffusionCoefficientV )
+    {
+        dTimeStepSize = 0.5*dGridPointSpacing*dGridPointSpacing/dDiffusionCoefficientU;
+    }
+    else
+    {
+        dTimeStepSize = 0.5*dGridPointSpacing*dGridPointSpacing/dDiffusionCoefficientV;
+    }
+
+    const double dReactionRateF( 0.03 );
+    const double dReactionRateK( 0.062 );
 
     //ds user information
-    std::cout << "\n---------------------------- DIFFUSION PSE SETUP ----------------------------" << std::endl;
-    std::cout << "   Diffusion Coefficient: "  << dDiffusionCoefficient << std::endl;
+    std::cout << "\n---------------------------- DIFFUSION PSE GRAY-SCOTT SETUP ----------------------------" << std::endl;
+    std::cout << " Diffusion Coefficient u: "  << dDiffusionCoefficientU << std::endl;
+    std::cout << " Diffusion Coefficient v: "  << dDiffusionCoefficientV << std::endl;
     std::cout << "           Boundary (2D): [" << prBoundaries.first << ", " << prBoundaries.second << "]" << std::endl;
     std::cout << "Number of Grid Points 1D: "  << uNumberOfGridPoints1D << std::endl;
     std::cout << "     Number of Particles: "  << uNumberOfParticles << std::endl;
     std::cout << "      Grid Point Spacing: "  << dGridPointSpacing << std::endl;
     std::cout << "    Number of Time Steps: "  << uNumberOfTimeSteps << std::endl;
     std::cout << "          Time Step Size: "  << dTimeStepSize << std::endl;
-    std::cout << "------------------------------------------------------------------------------" << std::endl;
+    std::cout << "         Reaction rate F: "  << dReactionRateF << std::endl;
+    std::cout << "         Reaction rate k: "  << dReactionRateK << std::endl;
+    std::cout << "----------------------------------------------------------------------------------------" << std::endl;
 
     //ds allocate domain (automatically creates initial density distribution)
-    Diffusion::CDomain cDomain( dDiffusionCoefficient, prBoundaries, dBoundarySize, uNumberOfGridPoints1D, uNumberOfParticles, dGridPointSpacing, dTimeStepSize );
+    Diffusion::CDomain cDomain( dDiffusionCoefficientU, dDiffusionCoefficientV, prBoundaries, dBoundarySize, uNumberOfGridPoints1D, uNumberOfParticles, dGridPointSpacing, dTimeStepSize );
 
     //ds information
     std::cout << "               Status:  0% done - current time: 0";
@@ -70,7 +87,7 @@ int main( int argc, char** argv )
             std::cout << "               Status: " << chBuffer << "% done - current time: " << dCurrentTime;
 
             //ds update domain
-            cDomain.updateHeatDistributionNumerical( );
+            //cDomain.updateHeatDistributionNumerical( );
         }
     }
     else
@@ -95,17 +112,15 @@ int main( int argc, char** argv )
             std::cout << "               Status: " << chBuffer << "% done - current time: " << dCurrentTime;
 
             //ds update domain
-            cDomain.updateHeatDistributionNumerical( );
+            cDomain.updateHeatDistributionNumerical( dReactionRateF, dReactionRateK );
 
             //ds streaming
             //cDomain.saveHeatGridToStream( );
-            cDomain.saveNormsToStream( dCurrentTime );
-            //cDomain.saveMeshToPNG( uCurrentTimeStep, 10 );
+            cDomain.saveMeshToPNG( uCurrentTimeStep, 10 );
         }
 
         //ds save the streams to a file
         //cDomain.writeHeatGridToFile( "bin/simulation.txt", uNumberOfTimeSteps );
-        cDomain.writeNormsToFile( "bin/norms.txt", uNumberOfTimeSteps, dTimeStepSize );
     }
 
     //ds stop timing
@@ -114,7 +129,7 @@ int main( int argc, char** argv )
     //ds cause an output ostream
     std::cout << std::endl;
     std::cout << "     Computation time: " << dDurationSeconds << std::endl;
-    std::cout << "------------------------------------------------------------------------------\n" << std::endl;
+    std::cout << "----------------------------------------------------------------------------------------\n" << std::endl;
 
     return 0;
 }

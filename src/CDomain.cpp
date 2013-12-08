@@ -1,5 +1,6 @@
 #include "CDomain.h"
 #include <math.h>    //ds fabs, etc.
+#include <stdlib.h>  //ds rand48
 #include "writepng.h"
 #include <iostream>
 
@@ -12,34 +13,39 @@ namespace Diffusion
 {
 
 //ds ctor/dtor
-CDomain::CDomain( const double& p_dDiffusionCoefficient,
-             const std::pair< double, double >& p_prBoundaries,
-             const double& p_dBoundarySize,
-             const unsigned int& p_uNumberOfGridPoints1D,
-             const unsigned int& p_uNumberOfParticles,
-             const double& p_dGridPointSpacing,
-             const double& p_dTimeStepSize ) : m_dDiffusionCoefficient( p_dDiffusionCoefficient ),
-                                               m_prBoundaries( p_prBoundaries ),
-                                               m_dBoundarySize( p_dBoundarySize ),
-                                               m_uNumberOfGridPoints1D( p_uNumberOfGridPoints1D ),
-                                               m_uNumberOfParticles( p_uNumberOfParticles ),
-                                               m_dGridPointSpacing( p_dGridPointSpacing ),
-                                               m_dTimeStepSize( p_dTimeStepSize ),
-                                               m_dEpsilon( 2*p_dGridPointSpacing ),
-                                               m_dVolP( p_dGridPointSpacing*p_dGridPointSpacing ),
-                                               m_PSEFactor( p_dTimeStepSize*p_dDiffusionCoefficient/( m_dEpsilon*m_dEpsilon )*m_dVolP ),
-                                               m_strLogHeatDistribution( "" ),
-                                               m_strLogNorms( "" ),
-                                               m_uNumberOfImagesSaved( 1 )
+CDomain::CDomain( const double& p_dDiffusionCoefficientU,
+                  const double& p_dDiffusionCoefficientV,
+                  const std::pair< double, double >& p_prBoundaries,
+                  const double& p_dBoundarySize,
+                  const unsigned int& p_uNumberOfGridPoints1D,
+                  const unsigned int& p_uNumberOfParticles,
+                  const double& p_dGridPointSpacing,
+                  const double& p_dTimeStepSize ) : m_dDiffusionCoefficientU( p_dDiffusionCoefficientU ),
+                                                    m_dDiffusionCoefficientV( p_dDiffusionCoefficientV ),
+                                                    m_prBoundaries( p_prBoundaries ),
+                                                    m_dBoundarySize( p_dBoundarySize ),
+                                                    m_uNumberOfGridPoints1D( p_uNumberOfGridPoints1D ),
+                                                    m_uNumberOfParticles( p_uNumberOfParticles ),
+                                                    m_dGridPointSpacing( p_dGridPointSpacing ),
+                                                    m_dTimeStepSize( p_dTimeStepSize ),
+                                                    m_dEpsilon( 2*p_dGridPointSpacing ),
+                                                    m_dVolP( p_dGridPointSpacing*p_dGridPointSpacing ),
+                                                    m_PSEFactorU( p_dTimeStepSize*p_dDiffusionCoefficientU/( m_dEpsilon*m_dEpsilon )*m_dVolP ),
+                                                    m_PSEFactorV( p_dTimeStepSize*p_dDiffusionCoefficientV/( m_dEpsilon*m_dEpsilon )*m_dVolP ),
+                                                    m_strLogHeatDistribution( "" ),
+                                                    m_strLogNorms( "" ),
+                                                    m_uNumberOfImagesSaved( 1 )
 
 {
-    //ds allocate memory for the data structure
-    m_gridHeat = new double*[m_uNumberOfGridPoints1D];
+    //ds allocate memory for the data structures
+    m_gridHeatU = new double*[m_uNumberOfGridPoints1D];
+    m_gridHeatV = new double*[m_uNumberOfGridPoints1D];
 
     //ds for each element
-    for( unsigned int u = 0; u < m_uNumberOfGridPoints1D; ++u )
+    for( unsigned int x = 0; x < m_uNumberOfGridPoints1D; ++x )
     {
-        m_gridHeat[u] = new double[m_uNumberOfGridPoints1D];
+        m_gridHeatU[x] = new double[m_uNumberOfGridPoints1D];
+        m_gridHeatV[x] = new double[m_uNumberOfGridPoints1D];
     }
 
     //ds initialize grid
@@ -49,19 +55,23 @@ CDomain::CDomain( const double& p_dDiffusionCoefficient,
 CDomain::~CDomain( )
 {
     //ds deallocate heat structure
-    for( unsigned int u = 0; u < m_uNumberOfGridPoints1D; ++u )
+    for( unsigned int x = 0; x < m_uNumberOfGridPoints1D; ++x )
     {
-        delete[] m_gridHeat[u];
+        delete[] m_gridHeatU[x];
+        delete[] m_gridHeatV[x];
     }
 
-    delete[] m_gridHeat;
+    delete[] m_gridHeatU;
+    delete[] m_gridHeatV;
+
 };
 
 //ds accessors
-void CDomain::updateHeatDistributionNumerical( )
+void CDomain::updateHeatDistributionNumerical( const double& p_dReactionRateF, const double& p_dReactionRateK )
 {
     //ds heat change for current time step
-    double gridHeatChangePSE[m_uNumberOfGridPoints1D][m_uNumberOfGridPoints1D];
+    double gridHeatUChangePSE[m_uNumberOfGridPoints1D][m_uNumberOfGridPoints1D];
+    double gridHeatVChangePSE[m_uNumberOfGridPoints1D][m_uNumberOfGridPoints1D];
 
     //ds for all grid points
     for( unsigned int uk = 0; uk < m_uNumberOfGridPoints1D; ++uk )
@@ -69,10 +79,11 @@ void CDomain::updateHeatDistributionNumerical( )
         for( unsigned int vk = 0; vk < m_uNumberOfGridPoints1D; ++vk )
         {
             //ds get 2d vector of current coordinates
-            const double dXk[2] = { uk*m_dGridPointSpacing, vk*m_dGridPointSpacing };
+            const double dXk[2] = { _onGrid( uk ), _onGrid( vk ) };
 
             //ds inner sum of formula
-            double dInnerSum( 0.0 );
+            double dInnerSumU( 0.0 );
+            double dInnerSumV( 0.0 );
 
             //ds loop 20x20
             for( int i = -10; i <= 10; ++i )
@@ -97,16 +108,24 @@ void CDomain::updateHeatDistributionNumerical( )
                    else if( m_uNumberOfGridPoints1D <= vp ){ vp -= m_uNumberOfGridPoints1D; dOffsetV = m_dBoundarySize;  } //ds moving to positive boundary
 
                         //ds get 2d vector of current coordinates
-                        const double dXp[2] = { ( up*m_dGridPointSpacing + dOffsetU ), ( vp*m_dGridPointSpacing + dOffsetV ) };
+                        const double dXp[2] = { ( _onGrid( up ) + dOffsetU ), ( _onGrid( vp ) + dOffsetV ) };
+
+                        //ds get kernel value
+                        const double dEta( getKernelEta( dXp, dXk ) );
+
+                        //ds heat product
+                        const double dHeatProduct( m_gridHeatU[uk][vk]*m_gridHeatV[uk][vk]*m_gridHeatV[uk][vk] );
 
                         //ds compute inner sum
-                        dInnerSum += ( m_gridHeat[up][vp] - m_gridHeat[uk][vk] )*getKernelEta( dXp, dXk );
+                        dInnerSumU += ( m_gridHeatU[up][vp] - m_gridHeatU[uk][vk] )*dEta - dHeatProduct + p_dReactionRateF*( 1.0 - m_gridHeatU[uk][vk] );
+                        dInnerSumV += ( m_gridHeatV[up][vp] - m_gridHeatV[uk][vk] )*dEta + dHeatProduct - ( p_dReactionRateF + p_dReactionRateK )*m_gridHeatV[uk][vk];
                     }
                 }
             }
 
             //ds add final part of formula and save in temporary grid
-            gridHeatChangePSE[uk][vk] = m_PSEFactor*dInnerSum;
+            gridHeatUChangePSE[uk][vk] = m_PSEFactorU*dInnerSumU;
+            gridHeatVChangePSE[uk][vk] = m_PSEFactorV*dInnerSumV;
         }
     }
 
@@ -115,20 +134,8 @@ void CDomain::updateHeatDistributionNumerical( )
     {
         for( unsigned int v = 0; v < m_uNumberOfGridPoints1D; ++v )
         {
-            m_gridHeat[u][v] += gridHeatChangePSE[u][v];
-        }
-    }
-}
-
-void CDomain::updateHeatDistributionAnalytical( const double& p_dCurrentTime )
-{
-    //ds for all grid points
-    for( unsigned int u = 0; u < m_uNumberOfGridPoints1D; ++u )
-    {
-        for( unsigned int v = 0; v < m_uNumberOfGridPoints1D; ++v )
-        {
-            //ds get the exact heat at this point
-            m_gridHeat[u][v] = getHeatAnalytical( u*m_dGridPointSpacing, v*m_dGridPointSpacing, p_dCurrentTime );
+            m_gridHeatU[u][v] += gridHeatUChangePSE[u][v];
+            m_gridHeatV[u][v] += gridHeatVChangePSE[u][v];
         }
     }
 }
@@ -144,7 +151,7 @@ void CDomain::saveHeatGridToStream( )
         for( unsigned int v = 0; v < m_uNumberOfGridPoints1D; ++v )
         {
             //ds get the integrals stream
-            std::snprintf( chBuffer, 16, "%f", m_gridHeat[u][v] );
+            std::snprintf( chBuffer, 16, "%f", m_gridHeatU[u][v] );
 
             //ds add buffer and space to string
             m_strLogHeatDistribution += chBuffer;
@@ -154,55 +161,6 @@ void CDomain::saveHeatGridToStream( )
         //ds add new line for new row
         m_strLogHeatDistribution += '\n';
     }
-}
-
-void CDomain::saveNormsToStream( const double& p_dCurrentTime )
-{
-    //ds get total heat
-    double dTotalHeat( 0.0 );
-
-    //ds norms
-    double dLInfinity( 0.0 );
-    double dL1( 0.0 );
-    double dL2( 0.0 );
-
-    //ds for all grid points
-    for( unsigned int u = 0; u < m_uNumberOfGridPoints1D; ++u )
-    {
-        for( unsigned int v = 0; v < m_uNumberOfGridPoints1D; ++v )
-        {
-            //ds add the current heat value
-            dTotalHeat += m_gridHeat[u][v];
-
-            //ds calculate the error (numerical - analytical) - the absolute value is already here taken since it does not change L
-            const double dErrorAbsolute( fabs( m_gridHeat[u][v] - getHeatAnalytical( u*m_dGridPointSpacing, v*m_dGridPointSpacing, p_dCurrentTime ) ) );
-
-            //ds check for LInf
-            if( dLInfinity < dErrorAbsolute )
-            {
-                dLInfinity = dErrorAbsolute;
-            }
-
-            //ds L1, L2
-            dL1 += dErrorAbsolute;
-            dL2 += dErrorAbsolute*dErrorAbsolute;
-        }
-    }
-
-    //ds scale L1, L2
-    dL1 /= m_uNumberOfParticles;
-    dL2 /= m_uNumberOfParticles;
-    dL2 = sqrt( dL2 );
-
-    //ds buffer for snprintf
-    char chBuffer[64];
-
-    //ds get the norms stream: E Linf L1 L2
-    std::snprintf( chBuffer, 64, "%f %f %f %f", dTotalHeat, dLInfinity, dL1, dL2 );
-
-    //ds append the buffer to our string
-    m_strLogNorms += chBuffer;
-    m_strLogNorms += "\n";
 }
 
 void CDomain::saveMeshToPNG( const unsigned int& p_dCurrentTimeStep, const unsigned int& p_uRate )
@@ -252,43 +210,28 @@ void CDomain::writeHeatGridToFile( const std::string& p_strFilename, const unsig
     ofsFile.close( );
 }
 
-void CDomain::writeNormsToFile( const std::string& p_strFilename, const unsigned int& p_uNumberOfTimeSteps, const double& p_dTimeStepSize ) const
+//ds helpers
+double CDomain::_onGrid( const unsigned int& p_uIndex ) const
 {
-    //ds ofstream object
-    std::ofstream ofsFile;
-
-    //ds open the file for writing
-    ofsFile.open( p_strFilename.c_str( ), std::ofstream::out );
-
-    //ds if it worked
-    if( ofsFile.is_open( ) )
-    {
-        //ds dump information to file
-        ofsFile << p_uNumberOfTimeSteps << " " << p_dTimeStepSize << "\n" << m_strLogNorms;
-    }
-
-    //ds close the file
-    ofsFile.close( );
+    return ( p_uIndex*m_dGridPointSpacing + m_prBoundaries.first );
 }
 
-//ds helpers
 void CDomain::setInitialHeatDistribution( )
 {
     //ds loop over all indexi
-    for( unsigned int u = 0; u < m_uNumberOfGridPoints1D; ++u )
+    for( unsigned int x = 0; x < m_uNumberOfGridPoints1D; ++x )
     {
-        for( unsigned int v = 0; v < m_uNumberOfGridPoints1D; ++v )
+        for( unsigned int y = 0; y < m_uNumberOfGridPoints1D; ++y )
         {
-            //ds set initial heat value
-            m_gridHeat[u][v] = sin( u*m_dGridPointSpacing*2*M_PI )*sin( v*m_dGridPointSpacing*2*M_PI );
+            //ds get grid coordinates
+            const double dX( _onGrid( x ) );
+            const double dY( _onGrid( y ) );
+
+            //ds set initial heat values
+            m_gridHeatU[x][y] = ( 1.0 - getChiA( dX, dY ) ) + getChiA( dX, dY )*( 1.0/2.0 + _getNormallyDistributedNumber( )/100.0 );
+            m_gridHeatV[x][y] = getChiA( dX, dY )*( 1.0/4.0 + _getNormallyDistributedNumber( )/100.0 );
         }
     }
-}
-
-double CDomain::getHeatAnalytical( const double& p_dX, const double& p_dY, const double& p_dT ) const
-{
-    //ds formula
-    return sin( p_dX*2*M_PI )*sin( p_dY*2*M_PI )*exp( -8*m_dDiffusionCoefficient*M_PI_SQUARED*p_dT );
 }
 
 double CDomain::getKernelEta( const double p_dXp[2], const double p_dXk[2] ) const
@@ -350,7 +293,8 @@ unsigned char* CDomain::getP2M( const unsigned int& p_uMeshSize ) const
             unsigned int uIndexMesh = 4.0*( i*p_uMeshSize + j );
 
             //ds concentration on mesh
-            double dConcentration( 0.0 );
+            double dConcentrationU( 0.0 );
+            double dConcentrationV( 0.0 );
 
             //ds for all particles
             for( unsigned int u = 0; u < m_uNumberOfGridPoints1D; ++u )
@@ -362,19 +306,45 @@ unsigned char* CDomain::getP2M( const unsigned int& p_uMeshSize ) const
                     const double dLambdaj = v*m_dGridPointSpacing/dH - j;
 
                     //ds compute concentration
-                    dConcentration += m_gridHeat[u][v]*getKernelW( dLambdai )*getKernelW( dLambdaj );
+                    dConcentrationU += m_gridHeatU[u][v]*getKernelW( dLambdai )*getKernelW( dLambdaj );
+                    dConcentrationV += m_gridHeatV[u][v]*getKernelW( dLambdai )*getKernelW( dLambdaj );
                 }
             }
 
+            const double dR( dConcentrationU-dConcentrationV );
+
             //ds set the mesh values - SNIPPET
-            chMesh[uIndexMesh+0] = clamp( gamma( dConcentration ), 0.0, 0.1 )*0xFFu;  // red
+            chMesh[uIndexMesh+0] = clamp( gamma( dR ), 0.0, 1.0 )*0xFFu; // red
             chMesh[uIndexMesh+1] = clamp( 1.0, 0.0, 1.0 )*0xFFu;                      // green
-            chMesh[uIndexMesh+2] = clamp( gamma( -dConcentration ), 0.0, 0.1 )*0xFFu; // blue
+            chMesh[uIndexMesh+2] = clamp( gamma( -dR ), 0.0, 1.0 )*0xFFu; // blue
             chMesh[uIndexMesh+3] = 0xFFu;                                             // alpha (opacity, 0xFFu = 255)
         }
     }
 
     return chMesh;
+}
+
+double CDomain::getChiA( const double& p_dX, const double& p_dY ) const
+{
+    //ds case
+    if( (-0.2 <= p_dX && p_dX <= 0.2 ) && (-0.2 <= p_dY && p_dY <= 0.2 ) )
+    {
+        return 1.0;
+    }
+    else
+    {
+        return 0.0;
+    }
+
+}
+
+double CDomain::_getNormallyDistributedNumber( ) const
+{
+    //ds calculate the uniform number first [0,1]
+    const double dUniformNumber( drand48( ) );
+
+    //ds return the normal one
+    return sqrt( -2*log( dUniformNumber ) )*cos( 2*M_PI*dUniformNumber );
 }
 
 } //namespace Diffusion

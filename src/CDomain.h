@@ -14,7 +14,8 @@ class CDomain
 //ds ctor/dtor
 public:
 
-    CDomain( const double& p_dDiffusionCoefficient,
+    CDomain( const double& p_dDiffusionCoefficientU,
+             const double& p_dDiffusionCoefficientV,
              const std::pair< double, double >& p_prBoundaries,
              const double& p_dBoundarySize,
              const unsigned int& p_uNumberOfGridPoints1D,
@@ -27,11 +28,15 @@ public:
 //ds attributes
 private:
 
-    //ds heat structure - we use a standard structure since the constant size is known at allocation and we benefit from access speed
-    double** m_gridHeat;
+    //ds heat structures for u and v
+    double** m_gridHeatU;
+    double** m_gridHeatV;
+
+    //ds coefficients
+    const double m_dDiffusionCoefficientU;
+    const double m_dDiffusionCoefficientV;
 
     //domain properties
-    const double m_dDiffusionCoefficient;
     const std::pair< double, double > m_prBoundaries;
     const double m_dBoundarySize;
     const double m_dGridPointSpacing;
@@ -42,7 +47,8 @@ private:
     //ds 2d-kernel
     const double m_dEpsilon;
     const double m_dVolP;
-    const double m_PSEFactor;
+    const double m_PSEFactorU;
+    const double m_PSEFactorV;
 
     //ds stream for offline data - needed for the movie and graphs
     std::string m_strLogHeatDistribution;
@@ -54,25 +60,28 @@ private:
 //ds accessors
 public:
 
-    void updateHeatDistributionNumerical( );
-    void updateHeatDistributionAnalytical( const double& p_dCurrentTime );
+    void updateHeatDistributionNumerical( const double& p_dReactionRateF, const double& p_dReactionRateK );
     void saveHeatGridToStream( );
-    void saveNormsToStream( const double& p_dCurrentTime );
     void saveMeshToPNG( const unsigned int& p_uCurrentTimeStep, const unsigned int& p_uRate );
     void writeHeatGridToFile( const std::string& p_strFilename, const unsigned int& p_uNumberOfTimeSteps ) const;
-    void writeNormsToFile( const std::string& p_strFilename, const unsigned int& p_uNumberOfTimeSteps, const double& p_dTimeStepSize ) const;
 
 //ds helpers
 private:
 
+    //ds returns grid coordinate
+    double _onGrid( const unsigned int& p_uIndex ) const;
+
     void setInitialHeatDistribution( );
-    double getHeatAnalytical( const double& p_dX, const double& p_dY, const double& p_dT ) const;
 
     //kernels
     double getKernelEta( const double p_dXp[2], const double p_dXk[2] ) const;
     double getKernelW( const double& p_dLambda ) const;
     double clamp(const double &x, const double &a, const double &b) const;
     unsigned char* getP2M( const unsigned int& p_uMeshSize ) const;
+
+    //ds gray-scott
+    double getChiA( const double& p_dX, const double& p_dY ) const;
+    double _getNormallyDistributedNumber( ) const;
 
 }; //class CDomain
 
